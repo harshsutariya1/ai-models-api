@@ -345,17 +345,20 @@ async def call_openai_api(request_data: OpenAIRequest):
 async def health_check():
     """
     Checks API health and connectivity to OpenAI.
+    Returns 200 OK only if the client is initialized and OpenAI API is reachable.
+    Otherwise, returns 503 Service Unavailable with details.
     Does not require API key authentication.
     """
     logger.debug("Health check requested.")
-    openai_status = "initialized"
+    openai_status = "unknown" # Default status
     openai_reachable = False
-    status_detail = {}
+    # Default detail dictionary, assuming error until proven otherwise
+    status_detail = {"status": "error", "openai_status": openai_status, "openai_reachable": openai_reachable}
 
     if not client:
         openai_status = "not_initialized"
         logger.warning("Health check: OpenAI client not initialized.")
-        status_detail = {"status": "error", "openai_status": openai_status, "openai_reachable": False}
+        status_detail.update({"openai_status": openai_status, "openai_reachable": False})
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=status_detail
@@ -363,28 +366,31 @@ async def health_check():
     else:
         # Try a lightweight API call to check connectivity/authentication
         try:
+            logger.debug("Health check: Attempting to list OpenAI models...")
             # Listing models is relatively inexpensive
             await client.models.list(limit=1)
             openai_reachable = True
-            openai_status = "ok" # More specific status when reachable
+            openai_status = "ok" # Status is 'ok' only if API call succeeds
             logger.debug("Health check: OpenAI API reached successfully.")
+            # Update detail for success case
             status_detail = {"status": "ok", "openai_status": openai_status, "openai_reachable": openai_reachable}
-            return status_detail # Return 200 OK only if everything passes
+            return status_detail # Return 200 OK
+
         except AuthenticationError:
             openai_status = "auth_error"
-            logger.error("Health check: OpenAI authentication error.")
+            logger.error("Health check: OpenAI authentication error. Check OPENAI_API_KEY.")
         except APIConnectionError as e:
             openai_status = "connection_error"
             logger.error(f"Health check: OpenAI connection error: {e}")
-        except APIError as e: # Catch other potential OpenAI API errors
+        except APIError as e: # Catch other specific OpenAI API errors
             openai_status = f"api_error ({e.status_code})"
-            logger.error(f"Health check: OpenAI API error: {e}")
-        except Exception as e: # Catch unexpected errors during the check
+            logger.error(f"Health check: OpenAI API error: Status={e.status_code}, Message={e.message}")
+        except Exception as e: # Catch any other unexpected errors during the check
             openai_status = "check_failed"
             logger.error(f"Health check: Unexpected error during OpenAI check: {e}", exc_info=True)
 
-        # If any exception occurred during the check, raise 503
-        status_detail = {"status": "error", "openai_status": openai_status, "openai_reachable": False}
+        # If any exception occurred during the try block, update detail and raise 503
+        status_detail.update({"openai_status": openai_status, "openai_reachable": False})
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=status_detail
