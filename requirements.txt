@@ -1,0 +1,7 @@
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0 # Required by Vercel for ASGI apps
+openai>=1.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0 # Still useful for local testing, ignored by Vercel runtime
+python-json-logger>=2.0.0
+python-multipart>=0.0.5 # Added for Header dependency
